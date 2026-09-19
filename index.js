@@ -2,13 +2,15 @@ const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle,
 const express = require('express');
 const fetch = require('node-fetch');
 
-// 1. تشغيل سيرفر ويب خفيف لإرضاء منصة Render ومنع خطأ Ports
+// 1. تشغيل سيرفر ويب خفيف لإرضاء منصة Render
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Discord Quest Bot is online and running!'));
+app.get('/', (req, res) => res.send('Discord Quest Bot is online!'));
 app.listen(PORT, () => console.log(`Web server running on port ${PORT}`));
 
-// 2. إعدادات بوت ديسكورد مع الصلاحيات المطلوبة
+// تخزين التوكنات للمستخدمين مؤقتاً
+const userTokens = new Map();
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -21,18 +23,15 @@ client.once('clientReady', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
 
-// أمر لإرسال رسالة المهام والأزرار
+// أمر إرسال واجهة البوت الرئيسية
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
     if (message.content === '!quest') {
         const embed = new EmbedBuilder()
             .setTitle('🤖 Discord Quest Tool')
-            .setDescription('أهلاً بك! استخدم الأزرار بالأسفل لإدارة مهام ديسكورد، تسجيل التوكن، أو استلام المكافآت والأوربس.')
-            .setColor(0x5865F2)
-            .addFields(
-                { name: 'Tasks Available', value: '• World of Warcraft: Midnight\n• One Piece Season 2\n• Apex Legends & More...', inline: false }
-            );
+            .setDescription('أهلاً بك! استخدم الأزرار بالأسفل لإدخال توكن حسابك أو جلب وعرض مهام ديسكورد الحقيقية.')
+            .setColor(0x5865F2);
 
         const row = new ActionRowBuilder()
             .addComponents(
@@ -41,23 +40,18 @@ client.on('messageCreate', async message => {
                     .setLabel('Get & Save Token')
                     .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
-                    .setCustomId('enroll_quests')
-                    .setLabel('Enroll Quests')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId('claim_rewards')
-                    .setLabel('Claim Rewards')
-                    .setStyle(ButtonStyle.Secondary)
+                    .setCustomId('fetch_and_show_quests')
+                    .setLabel('Enroll & Show Quests')
+                    .setStyle(ButtonStyle.Success)
             );
 
         await message.reply({ embeds: [embed], components: [row] });
     }
 });
 
-// التعامل مع التفاعلات (الأزرار والـ Modals)
 client.on('interactionCreate', async interaction => {
     
-    // 1. إذا قام المستخدم الضغط على زر إدخال التوكن
+    // 1. فتح نافذة إدخال التوكن
     if (interaction.isButton() && interaction.customId === 'open_token_modal') {
         const modal = new ModalBuilder()
             .setCustomId('token_modal')
@@ -67,65 +61,104 @@ client.on('interactionCreate', async interaction => {
             .setCustomId('user_token_input')
             .setLabel('ألصق التوكن (User Token) الخاص بك هنا:')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('MTI3... (اكتب أو ألصق التوكن هنا)')
+            .setPlaceholder('MTI3...')
             .setRequired(true);
 
-        const firstActionRow = new ActionRowBuilder().addComponents(tokenInput);
-        modal.addComponents(firstActionRow);
-
+        modal.addComponents(new ActionRowBuilder().addComponents(tokenInput));
         await interaction.showModal(modal);
         return;
     }
 
-    // 2. معالجة البيانات عندما يقوم المستخدم بإرسال الـ Modal
+    // 2. حفظ التوكن
     if (interaction.isModalSubmit() && interaction.customId === 'token_modal') {
         const userToken = interaction.fields.getTextInputValue('user_token_input');
+        const userId = interaction.user.id;
 
-        await interaction.reply({ 
-            content: '⏳ جاري التحقق من صحة التوكن والاتصال بخوادم ديسكورد...', 
-            flags: [MessageFlags.Ephemeral] 
-        });
+        await interaction.reply({ content: '⏳ جاري التحقق من التوكن...', flags: [MessageFlags.Ephemeral] });
 
         try {
-            // اختبار التوكن عبر جلب بيانات المستخدم من API ديسكورد الحقيقي
             const response = await fetch('https://discord.com/api/v10/users/@me', {
                 headers: { 'Authorization': userToken }
             });
 
             if (response.ok) {
                 const userData = await response.json();
+                userTokens.set(userId, userToken);
                 await interaction.editReply({ 
-                    content: `✅ **تم التحقق بنجاح!**\nمرحباً بك يا **${userData.username}** (ID: \`${userData.id}\`). تم حفظ التوكن وجاهز لتنفيذ المهام!`
+                    content: `✅ **تم التحقق وحفظ التوكن بنجاح!**\nمرحباً بك يا **${userData.username}**. يمكنك الآن الضغط على زر **Enroll & Show Quests** لعرض مهامك الحقيقية.`
                 });
             } else {
-                await interaction.editReply({ 
-                    content: '❌ **فشل التحقق:** التوكن الذي أدخلته غير صحيح أو منتهي الصلاحية. تأكد من نسخه بشكل دقيق.'
-                });
+                await interaction.editReply({ content: '❌ **فشل التحقق:** التوكن غير صحيح أو منتهي الصلاحية.' });
             }
         } catch (error) {
-            console.error(error);
-            await interaction.editReply({ 
-                content: '⚠️ حدث خطأ تقني أثناء الاتصال بالخادم.' 
-            });
+            await interaction.editReply({ content: '⚠️ حدث خطأ تقني أثناء الاتصال.' });
         }
         return;
     }
 
-    // 3. التعامل مع باقي الأزرار
-    if (interaction.isButton()) {
-        if (interaction.customId === 'enroll_quests') {
-            await interaction.reply({ 
-                content: '⚡ جاري فحص والاشتراك في جميع المهام المتاحة لحسابك...', 
-                flags: [MessageFlags.Ephemeral] 
+    // 3. جلب المهام الحقيقية وعرضها في المحادثة
+    if (interaction.isButton() && interaction.customId === 'fetch_and_show_quests') {
+        const userId = interaction.user.id;
+        const token = userTokens.get(userId);
+
+        if (!token) {
+            await interaction.reply({ content: '⚠️ يجب عليك حفظ التوكن أولاً عن طريق الضغط على زر **Get & Save Token**!', flags: [MessageFlags.Ephemeral] });
+            return;
+        }
+
+        await interaction.reply({ content: '⚡ جاري الاتصال بحسابك وجلب المهام الحقيقية المتاحة...', flags: [MessageFlags.Ephemeral] });
+
+        try {
+            // جلب المهام الحقيقية من API ديسكورد
+            const questsRes = await fetch('https://discord.com/api/v9/users/@me/quests', {
+                headers: { 'Authorization': token }
             });
-        } else if (interaction.customId === 'claim_rewards') {
-            await interaction.reply({ 
-                content: '🎁 جاري إرسال طلبات استلام المكافآت والأوربس...', 
-                flags: [MessageFlags.Ephemeral] 
-            });
+            const questsData = await questsRes.json();
+
+            // التحقق مما إذا كان هناك مهام أم لا
+            const questsList = questsData.quests || questsData; // بحسب هيكل استجابة ديسكورد
+            
+            if (!Array.isArray(questsList) || questsList.length === 0) {
+                await interaction.editReply({ content: 'ℹ️ لا توجد أي مهام (Quests) متاحة حالياً على حسابك.' });
+                return;
+            }
+
+            // بناء رسالة Embed تعرض المهام الحقيقية بالتفصيل
+            let descriptionText = '';
+            let enrolledCount = 0;
+
+            for (let quest of questsList) {
+                const gameTitle = quest.config?.messages?.game_title || quest.name || 'لعبة غير معروفة';
+                const rewardName = quest.reward?.name || 'مكافأة ديسكورد';
+                const questId = quest.id;
+
+                // محاولة التسجيل التلقائي في المهمة أثناء الجلب
+                try {
+                    const enrollRes = await fetch(`https://discord.com/api/v9/quests/${questId}/enroll`, {
+                        method: 'POST',
+                        headers: { 'Authorization': token, 'Content-Type': 'application/json' }
+                    });
+                    if (enrollRes.ok) enrolledCount++;
+                } catch (e) {
+                    // تجاهل الخطأ الفردي للمهمة إن وجدت
+                }
+
+                descriptionText += `🎮 **اللعبة:** ${gameTitle}\n🎁 **المكافأة:** ${rewardName}\n🆔 **ID:** \`${questId}\`\n----------------------------------\n`;
+            }
+
+            const resultEmbed = new EmbedBuilder()
+                .setTitle('📋 قائمة مهام حسابك الحقيقية')
+                .setDescription(descriptionText.substring(0, 4000)) // لضمان عدم تجاوز الحد الأقصى لحجم الرسالة
+                .setColor(0x00FF00)
+                .setFooter({ text: `تم الاشتراك بنجاح في (${enrolledCount}) من أصل (${questsList.length}) مهمة.` });
+
+            await interaction.followUp({ embeds: [resultEmbed], flags: [MessageFlags.Ephemeral] });
+
+        } catch (error) {
+            console.error(error);
+            await interaction.editReply({ content: '⚠️ حدث خطأ أثناء جلب المهام من خوادم ديسكورد.' });
         }
     }
 });
 
-// تسجيل الدخول بتوكن البوت
 client.login(process.env.DISCORD_TOKEN);
