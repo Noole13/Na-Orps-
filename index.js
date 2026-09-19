@@ -81,7 +81,10 @@ client.on('interactionCreate', async interaction => {
 
         try {
             const response = await fetch('https://discord.com/api/v10/users/@me', {
-                headers: { 'Authorization': userToken }
+                headers: { 
+                    'Authorization': userToken,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                }
             });
 
             if (response.ok) {
@@ -99,7 +102,7 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
-    // 3. جلب المهام الحقيقية والاشتراك فيها وإنجازها
+    // 3. جلب المهام الحقيقية باستخدام هيدرز المتصفح الكاملة والاشتراك فيها
     if (interaction.isButton() && interaction.customId === 'fetch_and_enroll_quests') {
         const userId = interaction.user.id;
         const token = userTokens.get(userId);
@@ -109,22 +112,53 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
-        await interaction.reply({ content: '⚡ جاري جلب المهام النشطة (مثل War Thunder و Heroes of History وغيرها) والاشتراك فيها...', flags: [MessageFlags.Ephemeral] });
+        await interaction.reply({ content: '⚡ جاري تجاوز فحص الأمان وجلب المهام النشطة من حسابك...', flags: [MessageFlags.Ephemeral] });
 
         try {
-            // جلب قائمة المهام المتاحة للحساب
-            const response = await fetch('https://discord.com/api/v9/users/@me/quests', {
-                headers: { 
-                    'Authorization': token,
-                    'Content-Type': 'application/json'
-                }
+            // الهيدرز الأساسية التي يرسلها متصفح المستخدم لتجاوز حماية ديسكورد
+            const browserHeaders = {
+                'Authorization': token,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'X-Super-Properties': Buffer.from(JSON.stringify({
+                    os: "Windows",
+                    browser: "Chrome",
+                    device: "",
+                    system_locale_override: "en-US",
+                    browser_user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    browser_version: "122.0.0.0",
+                    os_version: "10",
+                    referrer: "",
+                    referring_domain: "",
+                    referrer_current: "",
+                    referring_domain_current: "",
+                    release_channel: "stable",
+                    client_build_number: 284489,
+                    client_event_source: null
+                })).toString('base64'),
+                'X-Discord-Locale': 'en-US'
+            };
+
+            // محاولة جلب المهام من الرابط الشامل
+            const response = await fetch('https://discord.com/api/v9/users/@me/quests/@all', {
+                headers: browserHeaders
             });
 
             const data = await response.json();
-            const quests = data.quests || data;
+            console.log("Discord API Response:", JSON.stringify(data));
 
-            if (!Array.isArray(quests) || quests.length === 0) {
-                await interaction.editReply({ content: 'ℹ️ لم يتم العثور على مهام نشطة حالياً، أو أن التوكن يحتاج لتحديث.' });
+            // استخراج قائمة المهام بناءً على الهيكل المحتمل للرد
+            let quests = [];
+            if (Array.isArray(data)) {
+                quests = data;
+            } else if (data.quests && Array.isArray(data.quests)) {
+                quests = data.quests;
+            } else if (data.guild_quests && Array.isArray(data.guild_quests)) {
+                quests = data.guild_quests;
+            }
+
+            if (quests.length === 0) {
+                await interaction.editReply({ content: 'ℹ️ لم يتم إرجاع أي مهام. تأكد أن المتصفح المفتوح لديه نفس التوكن وأن المهام ظاهرة لديك.' });
                 return;
             }
 
@@ -141,10 +175,7 @@ client.on('interactionCreate', async interaction => {
                 try {
                     const enrollRes = await fetch(`https://discord.com/api/v9/quests/${questId}/enroll`, {
                         method: 'POST',
-                        headers: { 
-                            'Authorization': token, 
-                            'Content-Type': 'application/json' 
-                        },
+                        headers: browserHeaders,
                         body: JSON.stringify({ location: 0 })
                     });
 
@@ -160,7 +191,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             const resultEmbed = new EmbedBuilder()
-                .setTitle('📋 تقرير إنجاز مهام ديسكورد')
+                .setTitle('📋 تقرير إنجاز مهام ديسكورد الحقيقية')
                 .setDescription(descriptionText.substring(0, 4000))
                 .setColor(0x00FF00)
                 .setFooter({ text: `تم معالجة والاشتراك في (${successCount}) من أصل (${quests.length}) مهمة.` });
@@ -169,7 +200,7 @@ client.on('interactionCreate', async interaction => {
 
         } catch (error) {
             console.error(error);
-            await interaction.editReply({ content: '⚠️ حدث خطأ أثناء الاتصال بخوادم ديسكورد لجلب المهام.' });
+            await interaction.editReply({ content: '⚠️ حدث خطأ تقني أثناء الاتصال بخوادم ديسكورد لجلب المهام.' });
         }
     }
 });
