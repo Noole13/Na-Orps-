@@ -1,66 +1,63 @@
-const express = require('express');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
-const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-
-// صفحة ترحيبية للتأكد من أن السيرفر يعمل
-app.get('/', (req, res) => {
-    sendResponse = { status: "Online", message: "Discord Quest Bot is running successfully!" };
-    res.json(sendResponse);
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
-// مسار لتنفيذ عملية جلب وتسجيل المهام باستخدام التوكن المرسل
-app.post('/api/run-quests', async (req, res) => {
-    const { token } = req.body;
-    
-    if (!token) {
-        return res.status(400).json({ error: "Token is required!" });
-    }
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+});
 
-    try {
-        // 1. جلب المهام المتاحة
-        const response = await fetch('https://discord.com/api/v9/users/@me/quests', {
-            headers: {
-                'Authorization': token,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (!data.quests) {
-            return res.json({ success: false, message: "No quests found or invalid token.", data });
-        }
+// استقبال الأوامر العادية أو التفاعلية
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
 
-        let logs = [];
+    if (message.content === '!quest') {
+        const embed = new EmbedBuilder()
+            .setTitle('🤖 Discord Quest Tool')
+            .setDescription('أهلاً بك! استخدم الأزرار بالأسفل لإدارة مهام ديسكورد، التسجيل فيها، أو استلام المكافآت والأوربس.')
+            .setColor(0x5865F2)
+            .addFields(
+                { name: 'Tasks Available', value: '• World of Warcraft: Midnight\n• One Piece Season 2\n• Apex Legends & More...', inline: false }
+            );
 
-        // 2. التسجيل في كل متاح من المهام
-        for (let quest of data.quests) {
-            let questId = quest.id;
-            let enrollRes = await fetch(`https://discord.com/api/v9/quests/${questId}/enroll`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': token,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (enrollRes.ok) {
-                logs.push(`Enrolled successfully in quest: ${quest.config?.messages?.game_title || questId}`);
-            } else {
-                logs.push(`Failed or already enrolled in quest: ${questId}`);
-            }
-        }
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('get_token_info')
+                    .setLabel('Get Token')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('enroll_quests')
+                    .setLabel('Enroll Quests')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('claim_rewards')
+                    .setLabel('Claim Rewards')
+                    .setStyle(ButtonStyle.Secondary)
+            );
 
-        res.json({ success: true, logs });
-
-    } المستحب (error) {
-        res.status(500).json({ error: error.message });
+        await message.reply({ embeds: [embed], components: [row] });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// التعامل مع ضغط الأزرار من المستخدمين
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+
+    if (interaction.customId === 'get_token_info') {
+        await interaction.reply({ content: 'لربط حسابك والحصول على التوكن، يرجى اتباع التعليمات الخاصة بالأداة الآمنة.', ephemeral: true });
+    } else if (interaction.customId === 'enroll_quests') {
+        await interaction.reply({ content: '⚡ جاري فحص والاشتراك في جميع المهام المتاحة لحسابك...', ephemeral: true });
+    } else if (interaction.customId === 'claim_rewards') {
+        await interaction.reply({ content: '🎁 جاري إرسال طلبات استلام المكافآت والأوربس...', ephemeral: true });
+    }
 });
+
+// ضع هنا توكن بوت ديسكورد الخاص بك (الذي تستخرجه من Discord Developer Portal)
+client.login(process.env.DISCORD_TOKEN);
