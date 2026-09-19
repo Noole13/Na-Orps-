@@ -1,6 +1,14 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
+const express = require('express');
 const fetch = require('node-fetch');
 
+// 1. إنشاء سيرفر ويب بسيط لإرضاء منصة Render ومنع خطأ Ports
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Discord Quest Bot is online!'));
+app.listen(PORT, () => console.log(`Web server running on port ${PORT}`));
+
+// 2. إعدادات بوت ديسكورد
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -9,11 +17,11 @@ const client = new Client({
     ]
 });
 
-client.once('ready', () => {
+// استخدام clientReady لتجنب تحذير الإصدارات الحديثة
+client.once('clientReady', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
 
-// استقبال الأوامر العادية أو التفاعلية
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
@@ -46,18 +54,31 @@ client.on('messageCreate', async message => {
     }
 });
 
-// التعامل مع ضغط الأزرار من المستخدمين
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
-    if (interaction.customId === 'get_token_info') {
-        await interaction.reply({ content: 'لربط حسابك والحصول على التوكن، يرجى اتباع التعليمات الخاصة بالأداة الآمنة.', ephemeral: true });
-    } else if (interaction.customId === 'enroll_quests') {
-        await interaction.reply({ content: '⚡ جاري فحص والاشتراك في جميع المهام المتاحة لحسابك...', ephemeral: true });
-    } else if (interaction.customId === 'claim_rewards') {
-        await interaction.reply({ content: '🎁 جاري إرسال طلبات استلام المكافآت والأوربس...', ephemeral: true });
+    try {
+        // الرد الفوري باستخدام deferUpdate أو deferReply لمنع خطأ 10062
+        if (interaction.customId === 'get_token_info') {
+            await interaction.reply({ 
+                content: 'لربط حسابك والحصول على التوكن، يرجى اتباع التعليمات الخاصة بالأداة الآمنة.', 
+                flags: [MessageFlags.Ephemeral] 
+            });
+        } else if (interaction.customId === 'enroll_quests') {
+            await interaction.reply({ 
+                content: '⚡ جاري فحص والاشتراك في جميع المهام المتاحة لحسابك...', 
+                flags: [MessageFlags.Ephemeral] 
+            });
+        } else if (interaction.customId === 'claim_rewards') {
+            await interaction.reply({ 
+                content: '🎁 جاري إرسال طلبات استلام المكافآت والأوربس...', 
+                flags: [MessageFlags.Ephemeral] 
+            });
+        }
+    } catch (error) {
+        console.error("خطأ أثناء الاستجابة للزر:", error);
     }
 });
 
-// ضع هنا توكن بوت ديسكورد الخاص بك (الذي تستخرجه من Discord Developer Portal)
+// تسجيل الدخول بتوكن البوت
 client.login(process.env.DISCORD_TOKEN);
